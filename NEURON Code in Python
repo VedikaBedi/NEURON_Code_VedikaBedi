@@ -1,0 +1,418 @@
+# py -m pip install NEURON (in the terminal window)
+# py -m pip install numpy (needed to import rxd) (rxd: Reaction Diffusion in NEURON)
+# py -m pip install matplotlib 
+
+import neuron
+from neuron import h #always want the h submodule
+from neuron import rxd #import rxd module
+from neuron.units import ms, mV
+h.load_file("stdrun.hoc")
+import matplotlib.pyplot as plt
+import csv
+import numpy as np
+h.load_file("nrngui.hoc")
+#h.load_file("simplecell.ses")
+
+plotgraphs =1
+
+###### Red ON - Green OFF  RGC Cell (+R -G)  ######
+#### Centre OFF (Green in centre) - inhibitation in centre, excitation on outer 
+
+# SET-UP MORPHOLOGY
+
+soma = h.Section(name="soma")
+soma.L = soma.diam = 5    #5-7 micrometres soma size
+    
+
+dend1 = h.Section(name="Axon_Hillock")
+dend2 = h.Section(name="AIS")
+dend3 = h.Section(name="Rem_Axon_Length")
+
+dend1.L = 40
+dend1.diam = 1.25
+dend2.L = 40
+dend2.diam = 0.6
+dend3.L = 1170
+dend3.diam = 0.91
+
+# dendrite_lenghts = [40, 40, 1170]
+# dendrite_diameters = [1.25, 0.6, 0.91]
+#section 1 = axon hillock
+#section 2 = Axon initial segment (AIS)
+#section 3 = Remaining axon length
+
+
+bipolar_cell_dend = h.Section(name="bipolar_cell_dend")
+bipolar_cell_dend. L = 17
+bipolar_cell_dend.diam = 0.3
+
+bipolar_cell_dend.connect(soma, 0) #connect bipolar cell dendrite to soma at position 0 (start) --> from bipolar cells via synapse
+
+dend1.connect(soma, 1) #connect dendrite 1 to soma at position 1 (end) --> to optic nerve
+dend2.connect(dend1)
+dend3.connect(dend2)
+
+
+h.topology()
+
+# SET-UP BIOPHYSICS
+
+soma.Ra = 110  # Axial Resistance (Ohm.cm)
+soma.cm = 1    #membrane capacitance (microFarads/cm^2)
+
+soma.nseg = 5
+
+# MEMBRANE PARAMETERS
+soma.insert("pas") #passive membrane model
+
+soma.g_pas = 0.001  #passive membrane model leak conductance
+soma.e_pas = -70 #passive membrane model reverse potential   -----> MEMBRANE RESTING POTENTIAL
+
+
+# HOGDKIN - HUXLEY MODEL
+soma.insert("hh") # insert the Hogkin - Huxley model
+
+soma.gnabar_hh = 0.12 #Sodium conductance in S/cm^2 (SODIUM CHANNEL)
+soma.gkbar_hh = 0.036 #Potassium conductance in S/cm^2 (POTASSIUM CHANNEL)
+
+soma.gl_hh = 0.0003 #leakage conductance in hh model S/cm^2 (LEAKAGE CHANNEL)
+soma.el_hh = -54.3  #leak in hh model reverse potential mV
+
+soma.ena = 35 #sodium ions reverse potential mV
+soma.ek = -75 #potassium ions reverse potential mV
+
+
+# Dendrite passive currents
+
+dend1.insert("pas")
+dend2.insert("pas")
+dend3.insert("pas")
+bipolar_cell_dend.insert("pas")
+for seg in dend1:
+    seg.pas.g = 0.001 #Passive conductance in S/cm^2
+    seg.pas.e = -65 #Leak reversal potenial in mV
+for seg in dend2:
+    seg.pas.g = 0.001 #Passive conductance in S/cm^2
+    seg.pas.e = -65 #Leak reversal potenial in mV
+for seg in dend3:
+    seg.pas.g = 0.001 #Passive conductance in S/cm^2
+    seg.pas.e = -65 #Leak reversal potenial in mV
+for seg in bipolar_cell_dend:
+    seg.pas.g = 0.001 #Passive conductance in S/cm^2
+    seg.pas.e = -65 #Leak reversal potenial in mV
+
+
+
+
+
+
+
+
+######## EXTRACELLULAR MECHANISMS  #############
+
+soma.insert("extracellular")
+#soma.xraxial = 0.3 #ohm.cm (extracellular axial resistivity of the electrode for example)
+
+
+# #######   input from bipolar cell into RGC - VOLTAGE CLAMP
+# voltage_input = h.SEClamp(bipolar_cell_dend(0.5)) ## symmetric voltage clamp into centre of input dendrite
+# voltage_input.dur1 = 10 # Duration of the voltage step (in ms)
+# voltage_input.dur2 = 1 # Duration of the holding potential (in ms)
+# voltage_input.dur3 = 1 # Duration of the second voltage step (in ms)
+# voltage_input.amp1 = 70 #First voltage step (in mV)
+# voltage_input.amp2 = 70 #Holding potential (in mV)
+# voltage_input.amp3 = 70 #Second voltage step (in mV)
+
+# voltage_input.get_segment()
+
+
+bipolar_rgc_synapse = h.AlphaSynapse(bipolar_cell_dend(0.5))
+bipolar_rgc_synapse.onset = 10  #Time of synaptic onset (ms)
+bipolar_rgc_synapse.gmax = 0.001 #maximum synaptic conductance (uS)
+bipolar_rgc_synapse.e = 0 #Reversal potential of the synapse (mV)
+
+
+##### input from bipolar cell into RGC - CURRENT CLAMP
+
+pulse_number = 4
+iclamp_bipolar_pos = h.IClamp(bipolar_cell_dend(0.5))
+iclamp_bipolar_neg = h.IClamp(bipolar_cell_dend(0.5))
+
+duration = [1,2,5,10]
+delay = [10,20,30,40]
+
+iclamp_bipolar_pos.delay = 5 #Delay before the current starts (ms) SET DELAY FOR EACH PULSE
+iclamp_bipolar_pos.dur = 2 #Duration of the current injection (ms)
+iclamp_bipolar_pos.amp = 1 #Amplitude of the current injected (nA)
+
+iclamp_bipolar_neg.delay = 10 #Delay before the current starts (ms) SET DELAY FOR EACH PULSE
+iclamp_bipolar_neg.dur = 2 #Duration of the current injection (ms)
+iclamp_bipolar_neg.amp = -1 #Amplitude of the current injected (nA)
+
+
+
+##### RUNNING SIMULATION ######
+
+h.load_file("stdrun.hoc")
+
+#Setting up recording variables and running simulation:
+
+soma_voltage = h.Vector().record(soma(0.5)._ref_v)  # Membrane potential vector
+axon_hillock_voltage = h.Vector().record(dend1(0.5)._ref_v)  #  potential vector
+ais_voltage = h.Vector().record(dend2(0.5)._ref_v)  #  potential vector
+axon_end_voltage = h.Vector().record(dend3(0.5)._ref_v)  #  potential vector
+
+
+soma_current_passive = h.Vector().record(soma(0.5)._ref_i_pas)  # Soma passive current vector
+axon_current_passive = h.Vector().record(dend2(0.5)._ref_i_pas)  # Axon passive current vector
+
+
+synapse_current = h.Vector().record(bipolar_rgc_synapse._ref_i) #Synapse input current
+
+# soma_current = h.Vector().record(soma(0.5)._ref_i) #Soma current vector
+
+
+time = h.Vector().record(h._ref_t)  # Time stamp vector
+
+
+
+#amps = [0.075 *i for i in range (1, 5)]
+amps = {
+    "0.05 nA" : 0.05,
+    "0.1 nA" : 0.10, 
+    "0.15 nA" : 0.15, 
+    "0.20 nA" : 0.20, 
+    "0.30 nA" : 0.30,  
+    "0.40 nA" : 0.40,  
+    "0.50 nA" : 0.50, 
+    "1.00 nA" : 1.0, 
+    "1.50 nA" : 1.50, 
+    "2.00 nA" : 2.00, 
+    "2.50 nA" : 2.50, 
+    # # "3.00 nA" : 3.00,
+    # # "4.00 nA" : 4.00,
+    # # "5.00 nA" : 5.00,
+    # # "10.00 nA" : 10.00,
+    # # "20.00 nA" : 20.00,
+    }
+
+
+
+### SOMA 
+if plotgraphs ==1:
+    for label, amp in amps.items():
+        iclamp_bipolar_pos.amp = amp
+        # iclamp_bipolar_neg.amp = - amp
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(20 * ms)    # continue the simulation from the current time (0) until 50 ms
+        plt.plot(time, soma_voltage, label = label )
+
+    plt.legend(fontsize=14)
+    plt.xlabel('Time (ms)', fontsize=16, weight='bold')
+    plt.ylabel('Cell Membrane Potential (mV)', fontsize=16, weight='bold')
+    plt.xticks(np.arange(0,25,5),fontsize=15, weight='bold')
+    plt.yticks(fontsize=15, weight='bold')
+    plt.title('Membrane Potential vs. Time', fontsize=15, weight='bold')
+    plt.grid(True)
+    plt.show()
+
+
+
+
+### AXON HILLOCK
+if plotgraphs ==1:
+    for label, amp in amps.items():
+        iclamp_bipolar_pos.amp = amp
+        #iclamp_bipolar_neg.amp = - amp
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)    # continue the simulation from the current time (0) until 50 ms
+        plt.plot(time, axon_hillock_voltage, label = label )
+
+    plt.legend()
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Axon Hillock Potential (mV)')
+    plt.title('Axon Hillock Potential vs. Time')
+    plt.grid(True)
+    plt.show()
+
+
+
+### AXON INITIAL SEGMENT (AIS)
+if plotgraphs ==1:
+    for label, amp in amps.items():
+        iclamp_bipolar_pos.amp = amp
+        #iclamp_bipolar_neg.amp = - amp
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)    # continue the simulation from the current time (0) until 50 ms
+        plt.plot(time, ais_voltage, label = label )
+
+    plt.legend()
+    plt.xlabel('Time (ms)')
+    plt.ylabel('AIS Potential (mV)')
+    plt.title('Axon Initial Segement (AIS) Potential vs. Time')
+    plt.grid(True)
+    plt.show()
+
+
+
+### AXON REMAINING 
+if plotgraphs ==1:
+    for label, amp in amps.items():
+        iclamp_bipolar_pos.amp = amp
+        #iclamp_bipolar_neg.amp = - amp
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)    # continue the simulation from the current time (0) until 50 ms
+        plt.plot(time, axon_end_voltage, label = label )
+
+    plt.legend()
+    plt.xlabel('Time (ms)')
+    plt.ylabel('End Axon Potential (mV)')
+    plt.title('End Axon Potential vs. Time')
+    plt.grid(True)
+    plt.show()
+
+
+### ALL TOGETHER  
+if plotgraphs ==1:
+    for label, amp in amps.items():
+        iclamp_bipolar_pos.amp = amp
+        iclamp_bipolar_pos.delay = 10
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)
+        plt.plot(time, soma_voltage, label = label )
+        iclamp_bipolar_pos.amp = amp
+        iclamp_bipolar_pos.delay = 20
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)
+        plt.plot(time, axon_hillock_voltage )
+        iclamp_bipolar_pos.amp = amp
+        iclamp_bipolar_pos.delay = 30
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)
+        plt.plot(time, ais_voltage )
+        iclamp_bipolar_pos.amp = amp
+        iclamp_bipolar_pos.delay = 40
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(50 * ms)
+        plt.plot(time, axon_end_voltage )
+
+    plt.legend(title="Soma Measurement IClamp \n Current injection", fontsize=16)
+    plt.xlabel('Time (ms)', fontsize=16, weight='bold')
+    plt.ylabel('Potential (mV)', fontsize=16, weight='bold')
+    plt.xticks(fontsize=15, weight='bold')
+    plt.yticks(fontsize=15, weight='bold')
+    plt.title('Potential Aross Soma to Axon vs. Time', fontsize=15, weight='bold')
+    plt.grid(True)
+    plt.show()
+
+
+
+
+### SYNAPSE 
+if plotgraphs ==1:
+    for label, amp in amps.items():
+        iclamp_bipolar_pos.amp = amp
+        h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+        h.continuerun(15 * ms)    # continue the simulation from the current time (0) until 50 ms
+        plt.plot(time, synapse_current, label = label )
+
+    plt.legend()
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Synapse Current (nA)')
+    plt.title('Synapse Current vs. Time')
+    plt.grid(True)
+    plt.show()
+
+
+
+
+
+
+
+# ## Soma current: 
+
+# length = len((list(soma_voltage)))
+# print(length)
+
+# time_list = list(time)
+# print(len(list(time)))
+# del time_list[-1]
+# print(len(list(time)))
+
+# soma_current = []
+
+# for label, amp in amps.items():
+
+#     iclamp_bipolar.amp = amp
+#     h.finitialize(-65 * mV)   # initialize simulation such that cell has a resting membrane potential of -65 mV
+#     h.continuerun(50 * ms)    # continue the simulation from the current time (0) until 50 ms
+
+#     for i in range(1,length-1):
+#         delta = (soma_voltage[i+1] - soma_voltage[i]) / soma.g_pas   #delta v / conductance = current
+#         soma_current.append(delta)
+
+#     print(len(soma_current))
+#     print(len(list(time)))
+#     plt.plot(time, soma_current, label = label)
+
+
+
+
+
+
+
+
+
+
+
+
+# #By default, the NEURON h module provides the low level fadvance function for advancing one time step. 
+# # For higher-level simulation control specification, we load NEURON’s stdrun library:
+
+# h.load_file("stdrun.hoc")
+# h.finitialize(-65*mV) #We can then initialize our simulation such that our cell has a resting membrane potential of -65 mV:
+# h.continuerun(50*ms) #And now continue the simulation from the current time (0) until 40 ms:
+
+# #plot results:
+# # Plotting the results
+# plt.figure(figsize=(8, 4))
+# plt.plot(time, soma_voltage)
+# plt.xlabel('Time (ms)')
+# plt.ylabel('Cell Membrane Potential (mV)')
+# plt.title('Membrane Potential vs. Time')
+# plt.grid(True)
+# plt.show()
+
+
+
+
+# #plot results:
+# # Plotting the results
+# plt.figure(figsize=(8, 4))
+# plt.plot(time, axon_voltage)
+# plt.xlabel('Time (ms)')
+# plt.ylabel('Axon Potential (mV)')
+# plt.title('Axon Potential vs. Time')
+# plt.grid(True)
+# plt.show()
+
+
+
+# # #plot results:
+# # # Plotting the results
+# # plt.figure(figsize=(8, 4))
+# # plt.plot(time, soma_current)
+# # plt.xlabel('Time (ms)')
+# # plt.ylabel('Soma Current (nA)')
+# # plt.title('Soma Current vs. Time')
+# # plt.grid(True)
+# # plt.show()
+
+
+# # ps = h.PlotShape(True)
+# # # enable NEURON's graphics
+# # from neuron import gui
+
+# # # here: True means show using NEURON's GUI; False means do not do so, at least not at first
+# # ps = h.PlotShape(True)
+# # ps.show(0)
